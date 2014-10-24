@@ -1,4 +1,6 @@
 require.config({
+    //urlArgs: 'cb=' + Math.random(),
+    waitSeconds: 120,
     paths:{
         // RequireJS plugin
         text:'libs/text',
@@ -14,7 +16,8 @@ require.config({
 		cs: 'libs/cs',
         tpl: 'libs/tpl',
         // jQuery
-        jquery:'libs/jquery-1.8.3.min'
+        jquery:'libs/jquery-1.8.3.min',
+        typeahead: 'libs/typeahead.min'
     },
     shim:{
         backbone:{
@@ -36,7 +39,11 @@ require.config({
 		},
 		jquery : {
 			exports:'$'
-		}
+		},
+        typeahead: {
+            deps:['jquery'],
+            exports: '$'
+        }
     }
 });
 

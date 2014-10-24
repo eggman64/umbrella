@@ -2,17 +2,24 @@
 from models import *
 from ox.django.shortcuts import render_to_json_response
 from pymongo import MongoClient
-from django.shortcuts import render_to_response
+from django.shortcuts import render_to_response,get_object_or_404
 from django.contrib.auth.models import User
 from django.contrib.auth import login, authenticate
 from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse
 import re
 import math
-
+from helpers.book import get_authors, get_genres
+from django.core.mail import send_mail
+from bson.objectid import ObjectId
 
 def lenders(request):
     if request.method == 'GET':
-        lenders = list(Lender.objects.all().values())
+        id = request.GET.get('id', None)
+        if id:
+            lenders = [Lender.objects.get(pk=id).get_json()]
+        else:
+            lenders = [l.get_json() for l in Lender.objects.all()]
         return render_to_json_response(lenders,status=200)
     return render_to_json_response([],status=501)
 
@@ -21,16 +28,13 @@ def lenders(request):
 def signup(request):
     username = request.POST.get("username", None)
     password = request.POST.get("password", None)
-    password2 = request.POST.get("password2", None)
     email = request.POST.get("email", None)
     first_name = request.POST.get("first_name", None)
     last_name = request.POST.get("last_name", None)
-    if not username or not password or not password2:
+    if not username or not password: 
         return render_to_json_response({'error': 'insufficient data'})
     if User.objects.filter(username=username).count() > 0:
         return render_to_json_response({'error': 'Username exists'})
-    if password != password2:
-        return render_to_json_response({'error': 'Passwords do not match'})
     u = User()
     u.username = username
     u.set_password(password)
@@ -41,7 +45,8 @@ def signup(request):
     if last_name:
         u.last_name = last_name
     u.save()
-    login(request, u)
+    user = authenticate(username=username, password=password)
+    login(request, user)
     return render_to_json_response({'success': 'User logged in'})
 
 
@@ -55,16 +60,56 @@ def signin(request):
         return render_to_json_response({'success': 'User logged in'})
     return render_to_json_response({'error': 'Username / password do not match'})
 
+@csrf_exempt
+def borrow(request):
+    id = request.POST.get("id", None)
+    message = request.POST.get("message", "")
+    lenders = request.POST.get("lenders", "")
+    lender_ids = lenders.split(",")
+    user = request.user
+    if not user.is_authenticated():
+        return render_to_json_response({'error':'Not logged in.'})
+    book = get_object_or_404(Book,mongo_id=id)
+    borrow = Borrow(user=user,book=book,message=message)
+    borrow.save() 
+    for lender_id in lender_ids:
+        lender = Lender.objects.get(pk=int(lender_id))
+        borrow.lenders.add(lender)
+    borrow.save()
+    from helpers.book import processborrow
+    processborrow(borrow)
+    return render_to_json_response({'success':'success'})
 	
+
+def get_book(request, id):
+    connection = MongoClient()
+    db = connection.ol
+    books = db.books
+    try:
+        mongo_id = ObjectId(id)
+        book = books.find_one({'_id': mongo_id})
+        book['_id'] = str(book['_id'])
+        book_model = Book.objects.get(mongo_id=mongo_id)
+        book['lenders'] = book_model.lenders_json()
+    except:
+        book = {'error': 'book not found'}
+    return render_to_json_response(book)
+    
+
 def books(request):
     if request.method == 'GET':
-        sort = request.GET.get('sort','-_id')
+        sort = request.GET.get('sort','')
+        if sort == '':
+            sort = '-_id'
         by,what = (sort[0],sort[1:],)
-        limit = request.GET.get('limit',8)
+        #limit = request.GET.get('limit',50)
         author = request.GET.get("author", None)
         genre = request.GET.get("genre", None)
+        lender = request.GET.get("lender", None)
+        if lender:
+            lender = int(lender)
         page = int(request.GET.get("page", "1"))
-        per_page = int(request.GET.get("per_page", "8"))
+        per_page = int(request.GET.get("per_page", "48"))
         q = request.GET.get("q", None)
         connection = MongoClient()
         db = connection.ol
@@ -86,6 +131,8 @@ def books(request):
             find['authors.author.key'] = author
         if genre:
             find['subjects'] = genre
+        if lender:
+            find['lenders'] = lender
         count = books.find(find).count()
         pages = int(math.ceil(count / (per_page + .0)))
         if page > pages and pages != 0:
@@ -99,6 +146,21 @@ def books(request):
 #        book_list = list(books.find(find).sort(what,direction=int(by+"1")).limit(8))
         for book in book_list:
             book['_id']=str(book['_id'])
+            book_model = Book.objects.get(mongo_id = book['_id'])
+            book['lenders'] = book_model.lenders_json()
+            book['author_names'] = []
+            if book.has_key('authors'):
+                for a in book['authors']:
+                    if a.has_key('author'):
+                        key = a['author']['key']
+                    elif a.has_key('type') and a['type'].has_key('author'):
+                        key = a['type']['author']['key']
+                    else:
+                        key = None
+                    #import pdb; pdb.set_trace()
+                    if key:
+                        author = db.authors.find_one({'key': key})
+                        book['author_names'].append(author['name'])
 
         return render_to_json_response({
             'items':list(book_list),
@@ -126,5 +188,26 @@ def get_filters_data(request):
     unique_genres = set.keys()
     return render_to_json_response({'authors': authors, 'lenders': lenders, 'genres': unique_genres}) 
 
+def authors(request, q):
+    authors = get_authors(q)
+    return render_to_json_response(authors)
+
+def genres(request, q):
+    genres = get_genres(q)
+    return render_to_json_response(genres)
+
+@csrf_exempt
+def mail(request):
+    message = request.POST.get("message")
+    email = request.POST.get("email")
+    send_mail("Contact on tiptiptip.org", message, email, ['info@camputer.org'])
+    return render_to_json_response({'success': 'success'})
+    
+
 def index(request):
     return render_to_response('index.jade')
+
+def update(request):
+    from tasks import update_all
+    update_all.delay()
+    return HttpResponse("Updating in the background, refresh the books list in a couple minutes and you should see your updates.")

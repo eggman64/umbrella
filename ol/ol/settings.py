@@ -2,6 +2,9 @@
 import os
 from os.path import join
 
+import djcelery
+djcelery.setup_loader()
+
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 THUMBNAIL_DEBUG = DEBUG
@@ -16,6 +19,9 @@ ADMINS = (
 INTERNAL_IPS = ('127.0.0.1',)
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(__file__))
+
+#RabbutMQ
+BROKER_URL = 'amqp://guest:guest@localhost:5672/'
 
 MANAGERS = ADMINS
 
@@ -56,7 +62,7 @@ USE_TZ = True
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
-MEDIA_ROOT = join(PROJECT_ROOT, 'media')
+MEDIA_ROOT = join(PROJECT_ROOT, '../media')
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
@@ -159,6 +165,7 @@ INSTALLED_APPS = (
     'debug_toolbar',
     'south',
     'books',
+    'djcelery',
     
 )
 
@@ -191,7 +198,7 @@ LOGGING = {
     }
 }
 
-
+'''
 if DEBUG:
     EMAIL_HOST = 'localhost'
     EMAIL_PORT = 1025
@@ -199,7 +206,7 @@ if DEBUG:
     EMAIL_HOST_PASSWORD = ''
     EMAIL_USE_TLS = False
     DEFAULT_FROM_EMAIL = 'testing@locahost.com'
-
+'''
 
 try:
     from local_settings import *

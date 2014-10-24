@@ -1,22 +1,22 @@
-define ['marionette','tpl!app/views/bookgrid.tpl','tpl!app/views/booklist.tpl','tpl!app/views/bookdetail.tpl','cs!app/core/mediator'],(Marionette,gridtemplate,listtemplate,detailtemplate,mediator) ->
+define ['marionette','jquery','cs!app/ol','tpl!app/views/bookgrid.tpl','tpl!app/views/booklist.tpl','tpl!app/views/bookdetail.tpl','cs!app/core/mediator'],(Marionette,$,OL,gridtemplate,listtemplate,detailtemplate,mediator) ->
 
-    class BookGridView extends Marionette.ItemView
+    class BookBaseView extends Marionette.ItemView
+        events:
+            'click .contactLender': 'borrow'
+        borrow: ->
+            mediator.commands.execute 'modal','borrow',@model
+
+    class BookGridView extends BookBaseView
         template: gridtemplate
         className: 'col25'
-        templateHelpers:
-            get_image_url:()->
-              if @covers? then "http://covers.openlibrary.org/b/id/#{@covers[0]}-L.jpg" else "http://placehold.it/180x253&text=#{@title}"
+
                 
-    class BookListView extends Marionette.ItemView
+    class BookListView extends BookBaseView
         template: listtemplate
-        templateHelpers:
-            get_image_url:()->
-              if @covers? then "http://covers.openlibrary.org/b/id/#{@covers[0]}-L.jpg" else "http://placehold.it/180x253&text=#{@title}"
-    class BookDetailView extends Marionette.ItemView
+
+    class BookDetailView extends BookBaseView
         template: detailtemplate
-        templateHelpers:
-            get_image_url:()->
-              if @covers? then "http://covers.openlibrary.org/b/id/#{@covers[0]}-L.jpg" else "http://placehold.it/180x253&text=#{@title}"
+
 
     class BooksView extends Marionette.CollectionView
         id: () ->
@@ -29,7 +29,7 @@ define ['marionette','tpl!app/views/bookgrid.tpl','tpl!app/views/booklist.tpl','
             @listenTo mediator.events,"filters:view",(viewtype) =>
                 @attributes.view = viewtype
                 @render()
-            
+
         itemView: @getItemView
         getItemView: (item)->
             @attributes = {view:'grid'} if typeof @attributes is "undefined"
